@@ -7,6 +7,8 @@ dashboard.data.json.tmp
 # 注意：本机跑 serve.py 时这些文件仍会正常生成，只是不纳入版本管理。
 dashboard.html
 dashboard.data.json
+spread.html
+spread.data.json
 index.html
 public/
 

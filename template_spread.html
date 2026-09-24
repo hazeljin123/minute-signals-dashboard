@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P2701-P2705 月差看板</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{
+  --bg:#f5f5f3; --panel:#ffffff; --border:#e2e1dc; --text:#2c2c2a;
+  --muted:#78776f; --hint:#a3a29a;
+  --up:#c0392b; --down:#1e8449;
+  --strong-buy:#a3261b; --strong-sell:#14663a; --watch:#8a8a82;
+}
+body{
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  background:var(--bg); color:var(--text); font-size:13px; line-height:1.6;
+  padding:14px;
+}
+
+/* ---- 顶部栏 ---- */
+header{
+  position:sticky; top:0; z-index:20; background:var(--bg);
+  padding:0 4px 12px; border-bottom:1px solid var(--border); margin-bottom:14px;
+}
+.toprow{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:11px; }
+h1{ font-size:16px; font-weight:600; }
+.meta{ font-size:12px; color:var(--muted); }
+.meta b{ color:var(--text); font-weight:500; }
+.refresh{ margin-left:auto; display:flex; align-items:center; gap:9px; font-size:12px; color:var(--muted); }
+.refresh button{
+  border:1px solid var(--border); background:var(--panel); color:var(--text);
+  padding:5px 12px; border-radius:6px; cursor:pointer; font-size:12px;
+}
+.refresh button:hover{ background:#eeece6; }
+.toggle{ display:flex; align-items:center; gap:5px; cursor:pointer; user-select:none; }
+.toggle input{ cursor:pointer; }
+
+/* ---- 品种切换 ---- */
+.symbar{ display:flex; gap:5px; flex-wrap:wrap; }
+.symbtn{
+  padding:6px 15px; border:1px solid var(--border); background:var(--panel);
+  border-radius:7px; cursor:pointer; font-size:13px; color:var(--muted);
+  display:flex; align-items:center; gap:7px; transition:all .12s;
+}
+.symbtn:hover{ background:#f0efe9; }
+.symbtn.on{ background:var(--text); color:#fff; border-color:var(--text); font-weight:500; }
+.symbtn .bdot{ width:7px; height:7px; border-radius:50%; flex:none; }
+.bdot.lv2{ background:#c0392b; }
+.bdot.lv1{ background:#e08070; }
+.bdot.lv0{ background:#c9c8c0; }
+.bdot.lv-1{ background:#6fb98f; }
+.bdot.lv-2{ background:#1e8449; }
+.symbtn.on .bdot{ box-shadow:0 0 0 2px rgba(255,255,255,.35); }
+
+/* ---- 品种头部 ---- */
+.symhead{
+  background:var(--panel); border:1px solid var(--border); border-radius:10px;
+  padding:14px 18px 15px; margin-bottom:12px;
+}
+.symhead-top{
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding-bottom:11px; border-bottom:1px solid var(--border); margin-bottom:12px;
+}
+.symhead .big{ font-size:20px; font-weight:600; letter-spacing:.3px; }
+.symhead .code{ font-size:11px; color:var(--hint); font-family:ui-monospace,monospace; }
+.verdict{
+  display:flex; align-items:center; gap:9px; padding:7px 14px; border-radius:8px;
+  font-size:14px; font-weight:600;
+}
+.vdot{ width:9px; height:9px; border-radius:50%; flex:none; }
+.v-2{ background:#fbeceb; color:var(--strong-buy); }
+.v-2 .vdot{ background:var(--strong-buy); box-shadow:0 0 0 3px #f0cecb; }
+.v-1{ background:#fdf3f1; color:#a8452f; }
+.v-1 .vdot{ background:#d4623f; box-shadow:0 0 0 3px #f2d8d2; }
+.v0{ background:#f4f4f0; color:var(--watch); }
+.v0 .vdot{ background:var(--watch); }
+.v--1{ background:#eef6f1; color:#1f6b45; }
+.v--1 .vdot{ background:#2f9d63; box-shadow:0 0 0 3px #d4e6db; }
+.v--2{ background:#e8f4ed; color:var(--strong-sell); }
+.v--2 .vdot{ background:var(--strong-sell); box-shadow:0 0 0 3px #c8e0d3; }
+.px{ margin-left:auto; text-align:right; }
+.px .last{ font-size:20px; font-weight:600; font-variant-numeric:tabular-nums; }
+.px .chg{ font-size:11px; font-weight:500; }
+
+/* ---- 递进提示 ---- */
+.escalation{
+  display:flex; align-items:center; gap:11px; padding:11px 14px; border-radius:9px;
+  margin-bottom:13px; border:1px solid transparent; border-left-width:4px;
+}
+/* 看涨：红色系，级别越高越浓 */
+.escalation.level3{
+  background:#fbe3e0; border-color:#d98d84; border-left-color:#a3261b;
+  box-shadow:0 0 0 3px rgba(163,38,27,.08);
+}
+.escalation.level3 .esc-text{ color:#7d1d13; font-weight:600; font-size:13.5px; }
+.escalation.level2{ background:#fdeeea; border-color:#ebc0b8; border-left-color:#d4623f; }
+.escalation.level2 .esc-text{ color:#a8452f; font-weight:600; }
+.escalation.level1{ background:#fcf7f5; border-color:#f0ded8; border-left-color:#dfa495; }
+.escalation.level1 .esc-text{ color:#8a6a5c; }
+/* 看跌：绿色系 */
+.escalation.short.level3{
+  background:#dff0e7; border-color:#8ec4a5; border-left-color:#14663a;
+  box-shadow:0 0 0 3px rgba(20,102,58,.08);
+}
+.escalation.short.level3 .esc-text{ color:#0d4425; font-weight:600; font-size:13.5px; }
+.escalation.short.level2{ background:#eaf5ef; border-color:#b8dcc8; border-left-color:#2f9d63; }
+.escalation.short.level2 .esc-text{ color:#1f6b45; font-weight:600; }
+.escalation.short.level1{ background:#f4f9f6; border-color:#d6e8de; border-left-color:#7cbb98; }
+.escalation.short.level1 .esc-text{ color:#4a7a5e; }
+/* 观望 / 等待 */
+.escalation.none{ background:#f7f7f4; border-color:#e8e7e0; border-left-color:#c9c8c0; }
+.escalation.none .esc-text{ font-weight:400; color:#8a8a82; }
+.escalation.none .esc-badge{ background:#b5b4ab; }
+
+.esc-badge{
+  flex:none; font-size:11px; font-weight:600; padding:4px 10px; border-radius:6px;
+  background:#c0392b; color:#fff; letter-spacing:.4px;
+}
+.escalation.level3 .esc-badge{ background:#a3261b; }
+.escalation.level2 .esc-badge{ background:#d4623f; }
+.escalation.level1 .esc-badge{ background:#c99a8b; }
+.escalation.short .esc-badge{ background:#2f9d63; }
+.escalation.short.level3 .esc-badge{ background:#14663a; }
+.escalation.short.level2 .esc-badge{ background:#2f9d63; }
+.escalation.short.level1 .esc-badge{ background:#7cbb98; }
+.esc-text{ flex:1; font-size:13px; font-weight:500; line-height:1.5; }
+.esc-steps{ display:flex; gap:6px; flex:none; }
+.step{
+  display:flex; align-items:center; gap:4px; font-size:11px;
+  color:var(--hint); padding:3px 8px; border-radius:5px; background:rgba(0,0,0,.035);
+}
+.step.done{ background:#c0392b; color:#fff; font-weight:600; }
+.escalation.short .step.done{ background:#1e8449; }
+.escalation.level3 .step.done{ background:#a3261b; }
+.escalation.short.level3 .step.done{ background:#14663a; }
+.step .sdot{ width:6px; height:6px; border-radius:50%; background:currentColor; opacity:.45; }
+.step.done .sdot{ opacity:1; }
+
+/* ---- 长周期面板 ---- */
+.ltpanel{ margin-bottom:13px; }
+.lt-summary{
+  display:flex; align-items:flex-start; gap:9px; padding:11px 14px;
+  border-radius:8px; font-size:12.5px; line-height:1.6; margin-bottom:10px;
+  border:1px solid transparent; transition:background .2s;
+}
+.lt-summary .lb{
+  flex:none; font-size:11px; font-weight:600; padding:2px 8px; border-radius:5px;
+}
+/* 多空强度配色：bull-3 最强看多 -> neut -> bear-3 最强看空 */
+.lt-summary.bull-3{ background:#fde9e7; border-color:#e0a49d; }
+.lt-summary.bull-3 .lb{ background:#c0392b; color:#fff; }
+.lt-summary.bull-2{ background:#fdefec; border-color:#eec4be; }
+.lt-summary.bull-2 .lb{ background:#d4623f; color:#fff; }
+.lt-summary.bull-1{ background:#fdf5f3; border-color:#f0dcd7; }
+.lt-summary.bull-1 .lb{ background:#e8a293; color:#fff; }
+.lt-summary.neut{ background:#f6f6f2; border-color:#e6e5dd; }
+.lt-summary.neut .lb{ background:#c5c4bb; color:#fff; }
+.lt-summary.bear-1{ background:#f2f8f4; border-color:#d3e8db; }
+.lt-summary.bear-1 .lb{ background:#7cbb98; color:#fff; }
+.lt-summary.bear-2{ background:#ecf6f0; border-color:#c3e0cf; }
+.lt-summary.bear-2 .lb{ background:#2f9d63; color:#fff; }
+.lt-summary.bear-3{ background:#e6f3ea; border-color:#a9d3ba; }
+.lt-summary.bear-3 .lb{ background:#14663a; color:#fff; }
+
+.lt-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:9px; }
+.ltcard{
+  border:1px solid var(--border); border-radius:8px; padding:10px 12px;
+  background:#fdfdfb; border-left-width:3px;
+}
+.ltcard.bull{ border-left-color:#c0392b; }
+.ltcard.bear{ border-left-color:#1e8449; }
+.ltcard.neut{ border-left-color:#c9c8c0; }
+.ltcard .lth{
+  display:flex; align-items:center; gap:7px; margin-bottom:7px;
+}
+.ltcard .ltname{ font-size:12.5px; font-weight:600; }
+.ltcard .ltdate{ font-size:10px; color:var(--hint); font-family:ui-monospace,monospace; }
+.ltcard .ltstance{
+  margin-left:auto; font-size:10px; font-weight:600; padding:1.5px 7px; border-radius:4px;
+}
+.ltstance.bull{ background:#fbeceb; color:var(--strong-buy); }
+.ltstance.bear{ background:#e8f4ed; color:var(--strong-sell); }
+.ltstance.neut{ background:#f1f0ec; color:var(--watch); }
+.ltcard .ltclose{
+  font-size:15px; font-weight:600; font-variant-numeric:tabular-nums; margin-bottom:5px;
+}
+.ltcard .ltclose span{ font-size:11px; font-weight:500; margin-left:5px; }
+.ltcard .ltdesc{ font-size:11.5px; line-height:1.55; }
+.ltcard.bull .ltdesc{ color:#8a3a2c; }
+.ltcard.bear .ltdesc{ color:#1f6b45; }
+.ltcard.neut .ltdesc{ color:#5f5e5a; }
+.ltcard .lttag{
+  display:inline-block; font-size:10px; padding:1px 6px; border-radius:4px;
+  margin:5px 4px 0 0; background:#f1f0ec; color:#78776f;
+}
+.ltcard .lttag.warn{ background:#fdf2ef; color:#a8452f; }
+@media (max-width:860px){ .lt-grid{ grid-template-columns:1fr; } }
+
+/* ---- 价差页面头部（独立页面，不再挂在品种页下方）---- */
+.iphead{
+  background:var(--panel); border:1px solid var(--border); border-radius:10px;
+  padding:14px 18px 15px; margin-bottom:12px;
+}
+.iphead-top{
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding-bottom:11px; border-bottom:1px solid var(--border); margin-bottom:12px;
+}
+.iphead .big{ font-size:20px; font-weight:600; letter-spacing:.3px; }
+.iphead .legs{ font-size:12px; color:var(--muted); }
+.iphead .legs b{ color:var(--text); font-weight:500; }
+.iphead .code{ font-size:11px; color:var(--hint); font-family:ui-monospace,monospace; }
+.iphead .px{ margin-left:auto; text-align:right; }
+.iphead .px .last{ font-size:20px; font-weight:600; font-variant-numeric:tabular-nums; }
+.iphead .px .lbl{ font-size:11px; color:var(--hint); }
+
+/* 价差方向配色（跨品种：走强=红 / 走弱=绿） */
+.ip-2{ background:#fbeceb; color:var(--strong-buy); }
+.ip-2 .vdot{ background:var(--strong-buy); box-shadow:0 0 0 3px #f0cecb; }
+.ip-1{ background:#fdf3f1; color:#a8452f; }
+.ip-1 .vdot{ background:#d4623f; box-shadow:0 0 0 3px #f2d8d2; }
+.ip0{ background:#f4f4f0; color:var(--watch); }
+.ip0 .vdot{ background:var(--watch); }
+.ip--1{ background:#eef6f1; color:#1f6b45; }
+.ip--1 .vdot{ background:#2f9d63; box-shadow:0 0 0 3px #d4e6db; }
+.ip--2{ background:#e8f4ed; color:var(--strong-sell); }
+.ip--2 .vdot{ background:var(--strong-sell); box-shadow:0 0 0 3px #c8e0d3; }
+
+.ip-summary{
+  padding:10px 14px; font-size:12.5px; line-height:1.65; border-radius:8px;
+  background:#fdfdfb; border:1px solid var(--border); margin-bottom:11px;
+}
+.ip-meta{ display:flex; gap:7px; flex-wrap:wrap; margin-top:7px; }
+.sp-tag{
+  font-size:10px; padding:1.5px 7px; border-radius:4px;
+  background:#f1f0ec; color:#78776f;
+}
+.sp-tag.up{ background:#fbeceb; color:#a3261b; }
+.sp-tag.dn{ background:#e8f4ed; color:#14663a; }
+
+/* ---- 六图网格（1/5/15 分钟 + 日/周/月线）---- */
+.tfgrid{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
+}
+.tfcard{
+  background:var(--panel); border:1px solid var(--border); border-radius:10px;
+  overflow:hidden; display:flex; flex-direction:column;
+}
+.tfhead{
+  display:flex; align-items:center; gap:9px; padding:9px 13px;
+  border-bottom:1px solid var(--border); background:#fcfcfa;
+}
+.tfname{ font-size:13px; font-weight:600; }
+.tfscore{
+  margin-left:auto; font-size:11px; font-weight:500; padding:2px 9px; border-radius:20px;
+  font-family:ui-monospace,monospace;
+}
+.tfscore.pos{ background:#fbeceb; color:var(--strong-buy); }
+.tfscore.neg{ background:#e8f4ed; color:var(--strong-sell); }
+.tfscore.neu{ background:#f1f0ec; color:var(--watch); }
+.tfdesc{ font-size:11px; color:var(--hint); }
+.chartwrap{ padding:6px 8px 2px; }
+canvas{ display:block; width:100%; height:186px; }
+.tflegend{
+  display:flex; gap:12px; padding:0 13px 8px; font-size:11px; color:var(--muted);
+}
+.tflegend i{ display:inline-block; width:11px; height:2px; vertical-align:middle; margin-right:4px; }
+.tfreasons{
+  border-top:1px solid var(--border); padding:8px 13px 10px;
+  max-height:118px; overflow-y:auto;
+}
+.tfreasons h4{
+  font-size:10px; font-weight:500; color:var(--hint); text-transform:uppercase;
+  letter-spacing:.5px; margin-bottom:5px;
+}
+.rline{
+  display:flex; align-items:flex-start; gap:7px; padding:3px 0; font-size:12px;
+  border-bottom:1px dashed #efeee8;
+}
+.rline:last-child{ border-bottom:none; }
+.rmark{ flex:none; font-size:10px; font-weight:600; padding:1px 5px; border-radius:4px; }
+.rmark.pos{ background:#fbeceb; color:var(--strong-buy); }
+.rmark.neg{ background:#e8f4ed; color:var(--strong-sell); }
+.rmark.neu{ background:#f1f0ec; color:var(--watch); }
+.rtext{ flex:1; line-height:1.5; }
+
+/* ---- 风控条 ---- */
+.riskbar{
+  display:flex; background:var(--panel); border:1px solid var(--border);
+  border-radius:10px; margin-top:12px; overflow:hidden;
+}
+.riskbar div{ flex:1; padding:10px 15px; border-right:1px solid var(--border); }
+.riskbar div:last-child{ border-right:none; }
+.riskbar span{ display:block; font-size:10px; color:var(--hint); margin-bottom:2px; }
+.riskbar b{ font-size:15px; font-variant-numeric:tabular-nums; font-weight:600; }
+
+/* ---- 依据汇总 ---- */
+.summary{
+  background:var(--panel); border:1px solid var(--border); border-radius:10px;
+  padding:13px 16px; margin-top:12px;
+}
+.summary h3{ font-size:12px; font-weight:500; color:var(--muted); margin-bottom:9px; }
+.smrow{ display:flex; gap:9px; padding:5px 0; font-size:12px; align-items:flex-start; }
+.smrow .t{ flex:none; width:52px; color:var(--hint); font-family:ui-monospace,monospace; font-size:11px; }
+
+.warnbox{
+  margin-top:14px; padding:11px 14px; background:#faf8f3;
+  border:1px solid #e8e3d5; border-radius:8px; font-size:11.5px;
+  color:#7a7266; line-height:1.65;
+}
+.warnbox b{ color:#5c5648; }
+.dot-live{
+  display:inline-block; width:6px; height:6px; border-radius:50%;
+  background:#1e8449; margin-right:5px; animation:blink 2.2s infinite;
+}
+@keyframes blink{ 0%,100%{opacity:1} 50%{opacity:.28} }
+.empty{ padding:40px; text-align:center; color:var(--hint); }
+@media (max-width:1180px){ .tfgrid{ grid-template-columns:repeat(2,1fr); } }
+@media (max-width:760px){ .tfgrid{ grid-template-columns:1fr; } }
+/* 品种条把品种页与价差页分开，避免混在一起看 */
+.symbtn.sp{ border-style:dashed; }
+.symsep{
+  align-self:center; font-size:11px; color:var(--hint); padding:0 4px;
+  user-select:none;
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="toprow">
+    <h1>P2701-P2705 月差看板</h1>
+    <div class="meta"><span class="dot-live"></span>数据 <b id="dataAt">-</b> · 生成 <b id="genAt">-</b></div>
+    <div class="refresh">
+      <label class="toggle"><input type="checkbox" id="autoRef" checked> 自动刷新</label>
+      <span id="cd">10</span>s
+      <button onclick="hardReload()">立即刷新</button>
+    </div>
+  </div>
+  <!-- 单页模式：PAGES_SINGLE 为真时按钮条会被隐藏（见 rebuildAll）。
+       保留这个容器是为了不改动 rebuildAll 的结构，少一处改动少一处风险。 -->
+  <div class="symbar" id="symbar"></div>
+</header>
+
+<div id="content"></div>
+
+<div class="warnbox">
+  <b>使用须知</b>：数据来自新浪财经公开接口，非交易所直连，存在秒级延迟，<b>仅供看盘辅助，不可用于高频或抢单</b>。
+  主力连续合约在换月时存在价格跳空，可能产生假信号。技术指标为概率工具，不构成投资建议，实盘决策与后果请自行承担。
+</div>
+
+<script>
+let PAYLOAD = /*__DATA__*/null;
+
+/* 六个图表周期：1/5/15 分钟 + 日/周/月线（30 分钟已撤下，但仍在后台参与打分） */
+const TF_ORDER = ['1','5','15','daily','weekly','monthly'];
+const TF_NAME = {
+  '1':'1 分钟','5':'5 分钟','15':'15 分钟',
+  'daily':'日线','weekly':'周线','monthly':'月线'
+};
+const TF_HINT = {
+  '1':'噪音较大，仅作参考','5':'短线主战场','15':'权重最高，最稳定',
+  'daily':'中期方向','weekly':'大级别结构','monthly':'长期格局'
+};
+/* 长周期卡片里没有分钟级仓位语义，判断依据标题换一下更贴切 */
+const LONG_TF = ['daily','weekly','monthly'];
+
+function fmt(n, d){
+  if(n===null||n===undefined||isNaN(n)) return '-';
+  return Number(n).toFixed(d===undefined?1:d);
+}
+function verdictCls(lv){ return lv===2?'v-2':lv===1?'v-1':lv===0?'v0':lv===-1?'v--1':'v--2'; }
+/* 价差页的方向口径：走强=红（ip-2/ip-1），走弱=绿（ip--1/ip--2） */
+function ipCls(lv){ return lv===2?'ip-2':lv===1?'ip-1':lv===0?'ip0':lv===-1?'ip--1':'ip--2'; }
+function scoreCls(v){ return v>=2?'pos':v<=-2?'neg':'neu'; }
+
+/* ---------- 画图 ---------- */
+function drawChart(canvas, bars, ind){
+  if(!canvas || !bars) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  if(W<=0||H<=0) return;
+  canvas.width = W*dpr; canvas.height = H*dpr;
+  const g = canvas.getContext('2d');
+  g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,W,H);
+  if(!bars.length) return;
+
+  const padL=4, padR=46, padT=8, padB=10;
+  // 量能：分钟线与品种页日线都有量；价差的长周期序列量能意义不大，
+  // 若整段全为 0 就省掉量柱，把高度让给价格图，避免一片空白。
+  let maxV=0; for(const b of bars) maxV=Math.max(maxV, b.v||0);
+  const hasVol = maxV > 0;
+  const volH = hasVol ? 26 : 0;
+  const gapV = hasVol ? 5 : 0;
+  const rsiH = 18, gapR = 6;
+  const priceH = H - padT - padB - volH - gapV - rsiH - gapR;
+  const pw = W - padL - padR;
+
+  let lo=Infinity, hi=-Infinity;
+  for(const b of bars){ lo=Math.min(lo,b.l); hi=Math.max(hi,b.h); }
+  const ma5=(ind&&ind.ma5)||[], ma20=(ind&&ind.ma20)||[];
+  for(const v of ma5) if(v!=null){ lo=Math.min(lo,v); hi=Math.max(hi,v); }
+  for(const v of ma20) if(v!=null){ lo=Math.min(lo,v); hi=Math.max(hi,v); }
+  const pad=(hi-lo)*0.08||1; lo-=pad; hi+=pad;
+  const yP = p => padT + (hi-p)/(hi-lo)*priceH;
+  const cw = pw/bars.length;
+  const bw = Math.max(Math.min(cw*0.62,8),1);
+
+  // 网格
+  g.strokeStyle='#eeece6'; g.lineWidth=0.5;
+  for(let k=0;k<=3;k++){
+    const yy=padT+priceH*k/3;
+    g.beginPath(); g.moveTo(padL,yy); g.lineTo(padL+pw,yy); g.stroke();
+    g.fillStyle='#a3a29a'; g.font='9px ui-monospace,monospace'; g.textAlign='left';
+    g.fillText(fmt(hi-(hi-lo)*k/3,0), padL+pw+4, yy+3);
+  }
+
+  // K 线与量
+  const volTop=padT+priceH+gapV;
+  for(let i=0;i<bars.length;i++){
+    const b=bars[i], x=padL+i*cw+cw/2;
+    const rise=b.c>=b.o;
+    g.strokeStyle=g.fillStyle = rise?'#c0392b':'#1e8449';
+    g.lineWidth=1;
+    g.beginPath(); g.moveTo(x,yP(b.h)); g.lineTo(x,yP(b.l)); g.stroke();
+    const y1=yP(Math.max(b.o,b.c)), y2=yP(Math.min(b.o,b.c));
+    g.fillRect(x-bw/2,y1,bw,Math.max(y2-y1,1));
+    if(hasVol){
+      const vh=maxV?((b.v||0)/maxV)*volH:0;
+      g.globalAlpha=.4;
+      g.fillRect(x-bw/2,volTop+volH-vh,bw,Math.max(vh,1));
+      g.globalAlpha=1;
+    }
+  }
+
+  // 均线
+  const line=(arr,color)=>{
+    g.strokeStyle=color; g.lineWidth=1.1; g.beginPath();
+    let started=false; const off=bars.length-arr.length;
+    for(let i=0;i<arr.length;i++){
+      const v=arr[i]; if(v==null) continue;
+      const idx=i+Math.max(off,0);
+      const x=padL+idx*cw+cw/2, y=yP(v);
+      if(!started){ g.moveTo(x,y); started=true; } else g.lineTo(x,y);
+    }
+    g.stroke();
+  };
+  if(ma5.length) line(ma5,'#e69f27');
+  if(ma20.length) line(ma20,'#378add');
+
+  // 买卖点
+  for(let i=0;i<bars.length;i++){
+    const b=bars[i]; if(!b.sig) continue;
+    const x=padL+i*cw+cw/2;
+    if(b.sig==='B'){
+      const y=yP(b.l)+11;
+      g.fillStyle='#c0392b'; g.beginPath();
+      g.moveTo(x,yP(b.l)+2); g.lineTo(x-4.5,y+8); g.lineTo(x+4.5,y+8); g.closePath(); g.fill();
+    } else {
+      const y=yP(b.h)-11;
+      g.fillStyle='#1e8449'; g.beginPath();
+      g.moveTo(x,yP(b.h)-2); g.lineTo(x-4.5,y-8); g.lineTo(x+4.5,y-8); g.closePath(); g.fill();
+    }
+  }
+
+  // RSI
+  const rsiArr=(ind&&ind.rsi)||[];
+  if(rsiArr.length){
+    const rTop=volTop+volH+gapR;
+    g.strokeStyle='#e2e1dc'; g.lineWidth=0.5;
+    g.beginPath(); g.moveTo(padL,rTop+rsiH); g.lineTo(padL+pw,rTop+rsiH); g.stroke();
+    g.strokeStyle='#7f77dd'; g.lineWidth=1; g.beginPath();
+    let started=false; const off2=bars.length-rsiArr.length;
+    for(let i=0;i<rsiArr.length;i++){
+      const v=rsiArr[i]; if(v==null) continue;
+      const idx=i+Math.max(off2,0);
+      const x=padL+idx*cw+cw/2, y=rTop+rsiH-(v/100)*rsiH;
+      if(!started){ g.moveTo(x,y); started=true; } else g.lineTo(x,y);
+    }
+    g.stroke();
+    g.fillStyle='#a3a29a'; g.font='9px ui-monospace,monospace'; g.textAlign='left';
+    g.fillText('RSI',padL+pw+4,rTop+rsiH/2+3);
+  }
+}
+
+/* ---------- 周期卡片（六图共用，品种页与价差页都走这里）----------
+   page.bars[tf] 的结构是 {bars:[...], ind:{ma5,ma20,rsi,dif,dea,hist}}，
+   与 page.periods[tf]（打分详情）分开存放。                                     */
+function renderTfCard(page, tf){
+  const p = page.periods[tf];
+  const bundle = page.bars[tf];
+  const el = document.createElement('div');
+  el.className='tfcard';
+  el.dataset.tf = tf;
+  if(!bundle || !bundle.bars || !bundle.bars.length){
+    el.innerHTML = `<div class="tfhead"><span class="tfname">${TF_NAME[tf]}</span>
+      <span class="tfdesc">${TF_HINT[tf]}</span></div>
+      <div class="empty" style="padding:30px">该周期无数据</div>`;
+    return el;
+  }
+  // 长周期（日/周/月）不参与分钟级打分，没有 raw_score，头部只显示趋势描述
+  const hasScore = p && p.raw_score != null;
+  const cls = hasScore ? scoreCls(p.raw_score) : 'neu';
+  const scoreTxt = hasScore
+    ? `${p.raw_score>=0?'+':''}${p.raw_score}`
+    : (tf==='daily'||tf==='weekly'||tf==='monthly'
+        ? '长周期'
+        : '—');
+  el.innerHTML = `
+    <div class="tfhead">
+      <span class="tfname">${TF_NAME[tf]}</span>
+      <span class="tfdesc">${TF_HINT[tf]}</span>
+      <span class="tfscore ${cls}">${scoreTxt}</span>
+    </div>
+    <div class="chartwrap"><canvas></canvas></div>
+    <div class="tflegend">
+      <span><i style="background:#e69f27"></i>MA5</span>
+      <span><i style="background:#378add"></i>MA20</span>
+      <span><i style="background:#7f77dd"></i>RSI</span>
+      <span><i style="background:#c0392b"></i>买</span>
+      <span><i style="background:#1e8449"></i>卖</span>
+    </div>
+    <div class="tfreasons">
+      <h4>${hasScore ? '判断依据' : '长周期描述'}</h4>
+      ${(p && p.reasons && p.reasons.length)
+        ? p.reasons.map((r,i)=>`<div class="rline">
+            <span class="rmark ${cls}" style="${i>0?'opacity:.5':''}">${i===0?'主':'次'}</span>
+            <span class="rtext">${r}</span></div>`).join('')
+        : `<div class="rline"><span class="rtext" style="color:#a3a29a">${
+              hasScore ? '该周期无明显信号' : '该周期按长周期面板的结论解读'}</span></div>`}
+    </div>
+  `;
+  return el;
+}
+
+/* 把一张 tfcard 里的 canvas 画出来（供首次渲染与统一重绘复用） */
+function paintTfCard(card, tf, bundle){
+  if(!card || !bundle) return;
+  const cv = card.querySelector('canvas');
+  if(cv) drawChart(cv, bundle.bars, bundle.ind || null);
+}
+
+/* ---------- 递进提示 ---------- */
+function renderEscalation(s, subject){
+  const e = s.escalation;
+  const tag = subject || '提示';
+  const el = document.createElement('div');
+  el.className = 'escalation';
+  if(!e){ el.className += ' none'; el.innerHTML = `<span class="esc-badge">${tag}</span><span class="esc-text">无递进数据</span>`; return el; }
+
+  const isShort = e.side === 'short';
+  let cls = 'none';
+  if(e.level === 3) cls = 'level3';
+  else if(e.level === 2) cls = 'level2';
+  else if(e.level === 1) cls = 'level1';
+  if(isShort) cls += ' short';
+  el.className = 'escalation ' + cls;
+
+  const sideName = e.side === 'long' ? '看涨' : e.side === 'short' ? '看跌' : '';
+  let badge = tag;
+  if(e.level === 1) badge = '初步' + sideName;
+  else if(e.level === 2) badge = '强' + sideName;
+  else if(e.level === 3) badge = '最强' + sideName;
+
+  // 进度步骤
+  let steps = '';
+  if(e.level > 0 && e.progress && e.progress.length){
+    steps = '<div class="esc-steps">' + e.progress.map(p =>
+      `<span class="step${p.done?' done':''}"><span class="sdot"></span>${p.tf}</span>`
+    ).join('') + '</div>';
+  }
+
+  el.innerHTML = `
+    <span class="esc-badge">${badge}</span>
+    <span class="esc-text">${e.text}</span>
+    ${steps}
+  `;
+  return el;
+}
+
+/* ---------- 长周期面板 ---------- */
+/* 把多空强度(-1~+1)映射到配色档位 */
+function trendClass(strength){
+  if(strength == null) return 'neut';
+  if(strength >= 0.6) return 'bull-3';
+  if(strength >= 0.3) return 'bull-2';
+  if(strength > 0.08) return 'bull-1';
+  if(strength <= -0.6) return 'bear-3';
+  if(strength <= -0.3) return 'bear-2';
+  if(strength < -0.08) return 'bear-1';
+  return 'neut';
+}
+function scoreClass(v){
+  if(v >= 0.08) return 'bull';
+  if(v <= -0.08) return 'bear';
+  return 'neut';
+}
+
+function renderLongterm(s){
+  const lt = s.longterm;
+  const el = document.createElement('div');
+  el.className = 'ltpanel';
+  if(!lt){ return el; }
+
+  const order = [
+    ['monthly','月线'], ['weekly','周线'], ['daily','日线']
+  ];
+  const cards = order.map(([k, name])=>{
+    const x = lt[k];
+    if(!x) return `<div class="ltcard neut"><div class="lth"><span class="ltname">${name}</span>
+      <span class="ltdate">无数据</span></div></div>`;
+    const cls = x.stance === '偏多' ? 'bull' : x.stance === '偏空' ? 'bear' : 'neut';
+    const cardCls = scoreClass(x.bias / 2);
+    const chgTxt = x.chg!=null
+      ? `<span style="color:${x.chg>=0?'#c0392b':'#1e8449'}">${x.chg>=0?'+':''}${x.chg.toFixed(2)}%</span>`
+      : '';
+    return `<div class="ltcard ${cardCls}">
+      <div class="lth">
+        <span class="ltname">${name}</span>
+        <span class="ltdate">${x.date}</span>
+        <span class="ltstance ${cls}">${x.stance}</span>
+      </div>
+      <div class="ltclose">${fmt(x.close,0)}${chgTxt}</div>
+      <div class="ltdesc">${x.desc}</div>
+    </div>`;
+  }).join('');
+
+  const conflictTags = (lt.conflicts||[]).length
+    ? `<div style="margin-top:7px">${lt.conflicts.map(c=>`<span class="lttag warn">${c}</span>`).join('')}</div>`
+    : '';
+
+  const tc = trendClass(lt.strength);
+  el.innerHTML = `
+    <div class="lt-summary ${tc}">
+      <span class="lb">长周期总结</span>
+      <span>${lt.summary}${conflictTags}</span>
+    </div>
+    <div class="lt-grid">${cards}</div>
+  `;
+  return el;
+}
+
+/* ---------- 价差页面头部 ----------
+   价差页与品种页共用 renderEscalation / renderLongterm，
+   区别只在标题行（显示两条腿）与标题里的结论配色。            */
+function renderInterpriceHead(s){
+  const el = document.createElement('div');
+  el.className = 'iphead';
+
+  const st = s.structure || {};
+  const stTags = [];
+  // 用 dir_sign 判方向而不是比较中文 —— 跨期是"走扩/收敛"、跨品种是"走强/走弱"，
+  // 比较字符串容易漏掉其中一套。
+  const ds = st.dir_sign;
+  if(st.direction){
+    const c = ds>0 ? 'up' : ds<0 ? 'dn' : '';
+    stTags.push(`<span class="sp-tag ${c}">中期${st.direction}</span>`);
+  }
+  if(st.vol_txt) stTags.push(`<span class="sp-tag">${st.vol_txt}</span>`);
+  if(st.pos!=null){
+    const c = st.pos>=70 ? 'up' : st.pos<=30 ? 'dn' : '';
+    stTags.push(`<span class="sp-tag ${c}">区间位置 ${st.pos.toFixed(0)}%</span>`);
+  }
+  if(s.conflict_note) stTags.push(`<span class="sp-tag">${s.conflict_note}</span>`);
+
+  const legs = (s.front_name && s.back_name)
+    ? `<b>${s.front_name}</b>（${s.front}）<span style="color:#c9c8c0"> − </span><b>${s.back_name}</b>（${s.back}）`
+    : '跨品种价差';
+
+  el.innerHTML = `
+    <div class="iphead-top">
+      <div>
+        <span class="big">${s.name}</span>
+        <span class="code" style="margin-left:9px">${s.code}</span>
+        <div class="legs" style="margin-top:3px">${legs}</div>
+      </div>
+      <div class="verdict ${ipCls(s.level)}">
+        <span class="vdot"></span>${s.verdict}
+      </div>
+      <div class="px">
+        <div class="lbl">当前价差</div>
+        <div class="last" style="color:${s.current>=0?'#c0392b':'#1e8449'}">${s.current>=0?'+':''}${fmt(s.current,0)}</div>
+      </div>
+    </div>
+  `;
+  const sum = document.createElement('div');
+  sum.className = 'ip-summary';
+  sum.innerHTML = `${s.summary||''}<div class="ip-meta">${stTags.join('')}</div>`;
+  el.appendChild(sum);
+  el.appendChild(renderEscalation(s, '价差'));
+  el.appendChild(renderLongterm(s));
+  return el;
+}
+
+/* ---------- 品种页面头部 ---------- */
+function renderSymbolHead(s){
+  const head = document.createElement('div');
+  head.className='symhead';
+  const q = s.quote||{};
+  const chg = (q.last && q.settle) ? q.last-q.settle : null;
+  const chgPct = (chg!==null && q.settle) ? chg/q.settle*100 : null;
+
+  head.innerHTML = `
+    <div class="symhead-top">
+      <div>
+        <span class="big">${s.name}</span>
+        <span class="code" style="margin-left:9px">${s.code}</span>
+      </div>
+      <div class="verdict ${verdictCls(s.level)}">
+        <span class="vdot"></span>${s.verdict}
+      </div>
+      <div class="px">
+        <div class="last">${fmt(s.current_price,0)}</div>
+        ${chgPct!==null?`<div class="chg" style="color:${chgPct>=0?'#c0392b':'#1e8449'}">${chgPct>=0?'+':''}${chgPct.toFixed(2)}%</div>`:''}
+      </div>
+    </div>
+  `;
+  // 递进提示 + 长周期面板 放在品种名右侧的空白区域
+  head.appendChild(renderEscalation(s));
+  head.appendChild(renderLongterm(s));
+  return head;
+}
+
+/* ---------- 风控/状态条（仅品种页）---------- */
+function renderRiskBar(s){
+  const rb = document.createElement('div');
+  rb.className='riskbar';
+  if(s.stop_loss||s.target){
+    rb.innerHTML = `
+      <div><span>参考止损（${s.main_tf||'-'}）</span><b style="color:#1e8449">${fmt(s.stop_loss,0)}</b></div>
+      <div><span>第一目标</span><b style="color:#c0392b">${fmt(s.target,0)}</b></div>
+      <div><span>盈亏比</span><b>${s.risk_reward!=null?s.risk_reward+' : 1':'-'}</b></div>
+      <div><span>加权总分</span><b>${s.total_score>=0?'+':''}${s.total_score}${s.divergence_corrected?' <span style="font-size:10px;color:#a3a29a">分歧修正</span>':''}</b></div>`;
+  }else{
+    rb.innerHTML = `
+      <div><span>信号状态</span><b style="font-size:14px">未共振，空仓等待</b></div>
+      <div><span>加权总分</span><b>${s.total_score>=0?'+':''}${s.total_score}</b></div>
+      <div><span>看多周期</span><b>${s.pos_periods} 个</b></div>
+      <div><span>看空周期</span><b>${s.neg_periods} 个</b></div>`;
+  }
+  return rb;
+}
+
+/* ---------- 统一页面渲染 ----------
+   品种页与价差页共用同一套骨架：
+     头部（结论 + 长周期总结 + 递进提示） -> 六图网格 -> （品种页额外加风控条）
+   区别仅在头部由哪个函数画。                                            */
+function renderPage(s){
+  const wrap = document.createElement('div');
+  wrap.className = 'pagewrap';
+  wrap.dataset.kind = s.kind;
+
+  wrap.appendChild(s.kind === 'interprice' ? renderInterpriceHead(s) : renderSymbolHead(s));
+
+  const grid = document.createElement('div');
+  grid.className='tfgrid';
+  TF_ORDER.forEach(tf=>{
+    const card = renderTfCard(s, tf);
+    grid.appendChild(card);
+    paintTfCard(card, tf, (s.bars||{})[tf]);
+  });
+  wrap.appendChild(grid);
+
+  if(s.kind !== 'interprice') wrap.appendChild(renderRiskBar(s));
+  return wrap;
+}
+
+/* ---------- 主流程 ---------- */
+let curIdx = 0;
+let curPageEl = null;
+let renderToken = 0;          // 渲染令牌，防止旧的重绘任务污染新页面
+
+/* 重建页面按钮条 + 当前页。
+   按钮条前半是 7 个品种、后半是 4 个价差，中间插一个分隔符，避免混着看。
+   用于首次渲染、切换页面、热更新后重建。 */
+function rebuildAll(){
+  const pages = (PAYLOAD && PAYLOAD.pages) || [];
+  if(!pages.length){
+    document.getElementById('content').innerHTML='<div class="empty">暂无数据，请先运行 刷新看板.bat</div>';
+    return;
+  }
+  document.getElementById('dataAt').textContent = PAYLOAD.data_at||'-';
+  document.getElementById('genAt').textContent = PAYLOAD.generated_at||'-';
+
+  const bar = document.getElementById('symbar');
+  bar.innerHTML='';
+
+  // 单页模式（月差专用版）：只有一个页面，按钮条没有切换意义，直接隐藏，
+  // 让页面更干净、把空间让给图表。
+  if(PAYLOAD.single || pages.length === 1){
+    bar.style.display = 'none';
+    selectPage(0, true);
+    return;
+  }
+
+  let sepAdded = false;
+  pages.forEach((s,i)=>{
+    if(s.kind === 'interprice' && !sepAdded){
+      const sep = document.createElement('span');
+      sep.className='symsep';
+      sep.textContent='价差';
+      bar.appendChild(sep);
+      sepAdded = true;
+    }
+    const b = document.createElement('div');
+    b.className='symbtn'+(s.kind==='interprice'?' sp':'')+(i===curIdx?' on':'');
+    const sc = s.kind==='interprice' ? s.total_score : s.total_score;
+    b.innerHTML = `<span class="bdot lv${s.level}"></span>${s.name}
+      <span style="font-size:11px;opacity:.6">${sc>=0?'+':''}${sc}</span>`;
+    b.onclick = ()=>selectPage(i);
+    bar.appendChild(b);
+  });
+  selectPage(curIdx, true);
+}
+
+function selectPage(i, isInit){
+  const pages = PAYLOAD.pages || [];
+  if(!pages.length) return;
+  if(i<0 || i>=pages.length) i = 0;
+  curIdx = i;
+  document.querySelectorAll('.symbtn').forEach((b,k)=>b.classList.toggle('on',k===i));
+
+  const c = document.getElementById('content');
+  c.innerHTML='';
+  curPageEl = renderPage(pages[i]);
+  c.appendChild(curPageEl);
+
+  // 渲染完成后重画 canvas（此时布局已完成，clientWidth 有效）
+  scheduleRedraw();
+  try{ sessionStorage.setItem('curSym', String(i)); }catch(e){}
+  if(!isInit) window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* 统一的重绘入口：requestAnimationFrame 保证在布局稳定后执行，
+   并用令牌避免切换页面时旧任务覆盖新页面。
+   品种页与价差页的结构现在完全一致（都是 .tfcard 六张），
+   所以重绘逻辑也合一了 —— 这也是统一 payload 结构带来的好处。 */
+let redrawScheduled = false;
+function scheduleRedraw(){
+  if(redrawScheduled) return;
+  redrawScheduled = true;
+  const myToken = ++renderToken;
+  requestAnimationFrame(()=>{
+    redrawScheduled = false;
+    if(myToken !== renderToken) return;      // 已被更新的渲染取代
+    if(!curPageEl) return;
+    const page = (PAYLOAD.pages||[])[curIdx];
+    if(!page) return;
+    curPageEl.querySelectorAll('.tfcard').forEach(card=>{
+      const tf = card.dataset.tf || TF_ORDER[[...card.parentNode.children].indexOf(card)];
+      paintTfCard(card, tf, (page.bars||{})[tf]);
+    });
+  });
+}
+
+/* ---------- 数据热更新 ----------
+   不再整页刷新（会打断操作、造成内容闪烁）。
+   改为：定时用 fetch 拉取最新的 spread.data.json，
+        成功则原地更新 PAYLOAD 并重绘当前品种。
+   若拉取失败（比如用 file:// 打开），自动降级为整页刷新。           */
+const REFRESH_SEC = 10;
+let cd = REFRESH_SEC;
+const cdEl = document.getElementById('cd');
+const autoEl = document.getElementById('autoRef');
+let hotOk = true;          // 热更新是否可用
+let refreshing = false;
+
+function currentPageCode(){
+  return ((PAYLOAD.pages||[])[curIdx]||{}).code || '';
+}
+
+async function hotUpdate(){
+  if(refreshing) return;
+  refreshing = true;
+  try{
+    const res = await fetch('spread.data.json?t=' + Date.now(), {cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const fresh = await res.json();
+    if(!fresh || !fresh.pages || !fresh.pages.length) throw new Error('空数据');
+
+    // 记住当前页面（按代码匹配，避免顺序变化错位）
+    const keepCode = currentPageCode();
+    PAYLOAD = fresh;
+    document.getElementById('dataAt').textContent = fresh.data_at || '-';
+    document.getElementById('genAt').textContent = fresh.generated_at || '-';
+
+    const idx = fresh.pages.findIndex(x=>x.code===keepCode);
+    curIdx = idx >= 0 ? idx : 0;
+    rebuildAll();                 // 重建页面按钮 + 当前页
+    hotOk = true;
+  }catch(e){
+    // 热更新不可用 -> 降级为整页刷新
+    hotOk = false;
+    hardReload();
+  }finally{
+    refreshing = false;
+  }
+}
+
+function hardReload(){
+  location.replace(location.pathname + '?t=' + Date.now() + location.hash);
+}
+
+setInterval(()=>{
+  if(!autoEl.checked){ cdEl.textContent = '暂停'; return; }
+  cd--;
+  cdEl.textContent = cd;
+  if(cd<=0){
+    cd = REFRESH_SEC;
+    if(hotOk) hotUpdate();
+    else hardReload();
+  }
+},1000);
+
+/* 记录滚动位置，整页刷新后恢复 */
+window.addEventListener('beforeunload', ()=>{
+  try{ sessionStorage.setItem('scrollY', String(window.scrollY)); }catch(e){}
+});
+try{
+  const sy = sessionStorage.getItem('scrollY');
+  if(sy) window.scrollTo(0, parseInt(sy,10));
+}catch(e){}
+
+/* 窗口尺寸变化重绘（用统一入口，避免与渲染竞争） */
+let rt;
+window.addEventListener('resize',()=>{
+  clearTimeout(rt);
+  rt = setTimeout(scheduleRedraw, 150);
+});
+
+/* 启动 */
+try{
+  const saved = sessionStorage.getItem('curSym');
+  if(saved!==null){
+    const n = parseInt(saved,10);
+    if(!isNaN(n) && n>=0 && n<((PAYLOAD&&PAYLOAD.pages)||[]).length) curIdx = n;
+  }
+}catch(e){}
+rebuildAll();
+</script>
+</body>
+</html>

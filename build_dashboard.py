@@ -68,7 +68,7 @@ def slim_bars(bars, n, tf="1"):
     return out
 
 
-def _chart_bundle(bars, n, tf, want_macd=False):
+def _chart_bundle(bars, n, tf, want_macd=False, min_bars=40):
     """
     把一段 K 线做成前端画图需要的包（截断 + 指标 + 买卖点标注）。
 
@@ -77,8 +77,11 @@ def _chart_bundle(bars, n, tf, want_macd=False):
     否则同一个看板上两种 K 线会有一点点不一样，看着很别扭。
 
     want_macd: 品种页保留 MACD 序列（副图），价差页只画均线与 RSI（格子更窄）。
+    min_bars : 最少根数，低于此值不画这张图。
+               默认 40 保证均线/MACD 有意义；但新上市合约的月线
+               可能只有个位数，此时调用方可传更小的值（如 4）。
     """
-    if not bars or len(bars) < 40:
+    if not bars or len(bars) < min_bars:
         return None
     ind = interprice_mod.I.compute_all(bars) if not want_macd else None
     if ind is None:

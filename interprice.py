@@ -159,7 +159,7 @@ def aggregate_daily(daily, mode):
     return out
 
 
-def build_long_periods(front_daily, back_daily):
+def build_long_periods(front_daily, back_daily, min_bars=35, min_long=35):
     """
     用两条腿的日线构造价差的 日线 / 周线 / 月线 序列。
 
@@ -167,16 +167,23 @@ def build_long_periods(front_daily, back_daily):
     再由价差日线聚合出周线、月线。
     反过来（各自聚合再相减）会错，因为两个品种的周线分组边界
     虽然一致，但某品种停牌/涨跌停导致缺日时分组会错位。
+
+    参数：
+        min_bars : 价差日线的最少根数，低于此值认为数据不可用，返回 {}
+        min_long : 周线/月线的最少根数。默认 35 是为了保证 MA20/MACD
+                   有足够历史；但**新上市的合约**（如棕榈油 2705）
+                   天生只有几个月数据，此时应放宽，否则周月线会整块消失。
+                   调用方可按需下调，例如月差页传 min_long=8。
     """
     daily = align_pair(front_daily, back_daily)
-    if not daily or len(daily) < 35:
+    if not daily or len(daily) < min_bars:
         return {}
     out = {"daily": daily}
     w = aggregate_daily(daily, "week")
     m = aggregate_daily(daily, "month")
-    if len(w) >= 35:
+    if len(w) >= min_long:
         out["weekly"] = w
-    if len(m) >= 35:
+    if len(m) >= min_long:
         out["monthly"] = m
     return out
 

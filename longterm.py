@@ -52,11 +52,17 @@ def _position_desc(highs, lows, closes, i, lookback=60):
     return f"处于近{lookback}周期中枢（{pos:.0f}%）", pos
 
 
-def analyze_timeframe(bars, label):
+def analyze_timeframe(bars, label, min_bars=35):
     """
     分析单个长周期（日/周/月），返回描述性 dict。
+
+    min_bars: 最少根数。默认 35 是为了让 MA20/MACD 有足够历史。
+              但**新上市合约**的月线可能只有个位数根
+              （如棕榈油 2705 于 2026-05 上市，到 9 月只有 5 根月线），
+              此时调用方可下调门槛，否则该周期会被整块判为"无数据"。
+              指标函数对数据不足会返回 None，不会崩，所以低门槛是安全的。
     """
-    if not bars or len(bars) < 35:
+    if not bars or len(bars) < min_bars:
         return None
 
     closes = [b["c"] for b in bars]
@@ -204,11 +210,16 @@ def summarize(daily, weekly, monthly):
     return txt, stance, conflicts, total
 
 
-def long_term_analysis(daily, weekly, monthly):
-    """入口：返回包含三个周期分析与总结的完整结构"""
-    d = analyze_timeframe(daily, "日线")
-    w = analyze_timeframe(weekly, "周线")
-    m = analyze_timeframe(monthly, "月线")
+def long_term_analysis(daily, weekly, monthly, min_bars=35):
+    """
+    入口：返回包含三个周期分析与总结的完整结构。
+
+    min_bars: 各周期的最少根数门槛，透传给 analyze_timeframe。
+              新上市合约（周/月线根数少）可传更小的值。
+    """
+    d = analyze_timeframe(daily, "日线", min_bars)
+    w = analyze_timeframe(weekly, "周线", min_bars)
+    m = analyze_timeframe(monthly, "月线", min_bars)
     summary_txt, stance, conflicts, total = summarize(d, w, m)
     # 归一化多空强度：-1 ~ +1，供前端配色
     strength = max(-1.0, min(1.0, total / 10.0))

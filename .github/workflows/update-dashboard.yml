@@ -92,37 +92,57 @@ jobs:
 
       - name: 生成看板
         if: steps.trading.outputs.should_run == 'true'
-        run: python build_dashboard.py
+        run: |
+          python build_dashboard.py    # 主看板：7 品种 + 4 价差，共 11 页
+          python build_spread.py       # 月差专属页：P2701-P2705，单页
 
       - name: 校验产物
         if: steps.trading.outputs.should_run == 'true'
         run: |
           test -f dashboard.html      || { echo "缺少 dashboard.html"; exit 1; }
           test -f dashboard.data.json || { echo "缺少 dashboard.data.json"; exit 1; }
+          test -f spread.html         || { echo "缺少 spread.html"; exit 1; }
+          test -f spread.data.json    || { echo "缺少 spread.data.json"; exit 1; }
+
           python - <<'PY'
           import json
+
+          # ---- 主看板 ----
           p = json.load(open('dashboard.data.json', encoding='utf-8'))
           pages = p.get('pages') or []
-          print(f"生成时间: {p.get('generated_at')}   数据时间: {p.get('data_at')}")
-          print(f"页面数  : {len(pages)}")
+          print(f"[主看板] 生成时间: {p.get('generated_at')}   数据时间: {p.get('data_at')}")
+          print(f"[主看板] 页面数  : {len(pages)}")
           assert len(pages) >= 10, f"页面数异常：{len(pages)}（应为 11 = 7 品种 + 4 价差）"
           sym = [x for x in pages if x['kind'] == 'symbol']
           itp = [x for x in pages if x['kind'] == 'interprice']
-          print(f"  品种页: {len(sym)}   价差页: {len(itp)}")
+          print(f"[主看板]   品种页: {len(sym)}   价差页: {len(itp)}")
           empty = [x['code'] for x in pages if not (x.get('bars') or {})]
           assert not empty, f"这些页面没有任何图表数据：{empty}"
-          print("产物校验通过")
+
+          # ---- 月差专属页 ----
+          s = json.load(open('spread.data.json', encoding='utf-8'))
+          sp = s.get('pages') or []
+          print(f"[月差页] 生成时间: {s.get('generated_at')}   数据时间: {s.get('data_at')}")
+          print(f"[月差页] 页面数  : {len(sp)}    single={s.get('single')}")
+          assert len(sp) == 1, f"月差页应为 1 页，实际 {len(sp)}"
+          assert sp[0].get('bars'), "月差页没有任何图表数据"
+          bars = sp[0]['bars']
+          print(f"[月差页] 图表周期: {sorted(bars.keys())}")
+          assert len(bars) >= 5, f"月差页图表数偏少：{len(bars)}"
+          print("产物校验通过（主看板 + 月差页）")
           PY
 
-      # 只把「网站真正需要的三个文件」挑出来发布，避免把源码、data/（6MB+）
+      # 只把「网站真正需要的文件」挑出来发布，避免把源码、data/（6MB+）
       # 一并传上 Pages —— 那会白白拖慢每次部署。
       - name: 准备 Pages 产物
         if: steps.trading.outputs.should_run == 'true'
         run: |
           mkdir -p public
-          cp dashboard.html      public/index.html          # Pages 默认入口
+          cp dashboard.html      public/index.html          # Pages 默认入口（主看板）
           cp dashboard.html      public/dashboard.html      # 保留原名，便于直接访问
           cp dashboard.data.json public/dashboard.data.json # 前端热更新用
+          cp spread.html         public/spread.html         # 月差专属页（独立网址）
+          cp spread.data.json    public/spread.data.json    # 月差页热更新用
           touch public/.nojekyll          # 阻止 Jekyll 处理，避免忽略下划线开头的文件
           echo "--- public/ 内容 ---"
           ls -la public/

@@ -1,11 +1,16 @@
 // DOM 桩渲染测试：用最小 DOM 模拟真正跑一遍模板里的渲染函数，
-// 确保 11 个页面（7 品种 + 4 价差）都能渲染出「头部 + 六图」，
-// 并验证 canvas 画图不抛异常。
-// 用法: node domtest.js
+// 确保每个页面都能渲染出「头部 + 六图」，并验证 canvas 画图不抛异常。
+//
+// 用法:
+//   node domtest.js                     # 测主看板 dashboard.html
+//   node domtest.js spread.html         # 测月差页 spread.html
 const fs = require('fs');
 const path = require('path');
 
-const html = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8');
+// 允许命令行指定要测的 html（默认主看板）
+const targetHtml = process.argv[2] || 'dashboard.html';
+const html = fs.readFileSync(path.join(__dirname, targetHtml), 'utf8');
+console.log(`[DOM 测试] 目标文件: ${targetHtml}`);
 
 /* ---------- 1. 抽出模板 script 里的渲染逻辑 ---------- */
 // 取 <script> ... </script> 的内容，去掉末尾的启动调用（我们在桩里自己驱动）
@@ -182,6 +187,7 @@ js = js.replace(/let PAYLOAD =[\s\S]*?;/, 'let PAYLOAD = __PAYLOAD__;');
 
 /* ---------- 4. 执行 ---------- */
 let errors = [];
+const stats = { pages: 0 };
 try {
   const fn = new Function('__PAYLOAD__', js + '\nreturn { renderPage, renderEscalation, renderLongterm, tfOrder: TF_ORDER, drawChart };');
   const api = fn(PAYLOAD);
@@ -189,7 +195,8 @@ try {
   console.log('TF_ORDER =', JSON.stringify(api.tfOrder));
 
   const pages = PAYLOAD.pages || [];
-  console.log(`待渲染页面: ${pages.length}\n`);
+  const single = !!PAYLOAD.single;
+  console.log(`待渲染页面: ${pages.length}${single ? '（单页专属版）' : ''}\n`);
 
   pages.forEach((p, i) => {
     let el;
@@ -229,6 +236,7 @@ try {
     });
 
     console.log(`${String(i).padStart(2)} ${p.kind === 'interprice' ? '价差' : '品种'} ${String(p.code).padEnd(8)} ${String(p.name).padEnd(12)} 头=${heads} 图=${cards.length} 长周期=${ltpanels.length} 提示=${escalations.length}`);
+    stats.pages++;
   });
 
   // 跑一遍 rAF 队列（验证延迟重绘不抛异常）
@@ -247,5 +255,5 @@ if (errors.length) {
   errors.slice(0, 30).forEach(e => console.log('  - ' + e));
   process.exit(1);
 } else {
-  console.log('✅ 11 个页面全部渲染成功（头部 + 六图 + 长周期 + 递进提示）');
+  console.log(`✅ ${stats.pages} 个页面全部渲染成功（头部 + 六图 + 长周期 + 递进提示）`);
 }
