@@ -93,8 +93,37 @@ jobs:
       - name: 生成看板
         if: steps.trading.outputs.should_run == 'true'
         run: |
-          python build_dashboard.py    # 主看板：7 品种 + 4 价差，共 11 页
-          python build_spread.py       # 月差专属页：P2701-P2705，单页
+          # 主抓取层已对空响应做内部重试（见 fetch_data.fetch_minline），
+          # 但极端情况下仍可能有个别周期落空。这里再包一层「整轮重跑」：
+          # 第一轮若有数据缺口就等一会重来一次，避免一次抖动就白跑一趟。
+          run_once () {
+            python build_dashboard.py    # 主看板：7 品种 + 4 价差，共 11 页
+            python build_spread.py       # 月差专属页：P2701-P2705，单页
+          }
+          check_gaps () {
+            python - <<'PY'
+          import json, sys
+          gaps = []
+          p = json.load(open('dashboard.data.json', encoding='utf-8'))
+          for x in (p.get('pages') or []):
+              if not (x.get('bars') or {}):
+                  gaps.append(x['code'])
+          s = json.load(open('spread.data.json', encoding='utf-8'))
+          if not (s.get('pages') or [{}])[0].get('bars'):
+              gaps.append('月差页')
+          if gaps:
+              print(f"::warning::数据缺口：{gaps}")
+              sys.exit(3)
+          PY
+          }
+
+          run_once
+          if ! check_gaps; then
+            echo "::warning::首次生成有数据缺口，等待 15 秒后整轮重跑…"
+            sleep 15
+            run_once
+            check_gaps   # 第二次仍缺就直接失败（由下面校验步骤报错）
+          fi
 
       - name: 校验产物
         if: steps.trading.outputs.should_run == 'true'

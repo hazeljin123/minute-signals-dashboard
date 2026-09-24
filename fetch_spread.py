@@ -143,6 +143,22 @@ def fetch_all(verbose=True):
                   f"{fq['last']:.0f} - {bq['last']:.0f} = {fq['last'] - bq['last']:.0f}")
         print(f"  [耗时] {elapsed:.1f} 秒")
 
+        # 完整性自检：两条腿的任一周期缺失都会让月差少一根对应 K 线，
+        # 严重时（如 1m/5m 全空）会让整块分析失败，所以必须显式报出来。
+        gaps = []
+        for leg, data in ((SPREAD_CONFIG["front"], f), (SPREAD_CONFIG["back"], b)):
+            for pt in PERIODS:
+                if not (data["periods"].get(pt) or []):
+                    gaps.append(f"{leg} {pt}m")
+            if not data.get("daily"):
+                gaps.append(f"{leg} 日线")
+            if not data.get("quote"):
+                gaps.append(f"{leg} 行情")
+        if gaps:
+            print(f"  [警告] 重试后仍为空：{', '.join(gaps)}")
+        else:
+            print("  [完整性] 两条腿全部周期抓取齐全")
+
     return result
 
 

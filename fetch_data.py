@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 
@@ -118,13 +119,32 @@ def _curl(url, referer="https://finance.sina.com.cn", timeout=20):
         return None
 
 
-def fetch_minline(symbol, ptype="5"):
+def fetch_minline(symbol, ptype="5", retries=2):
     """
     抓取单品种单周期分钟线。
     返回 list[dict]：{t, o, h, l, c, v, p}
+
+    关于 retries（重要）：
+        新浪接口在并发较高时会**间歇性返回空体**（HTTP 正常、内容为空），
+        实测 14 线程抓 7 品种×4 周期时，每次总有一两个请求落空，
+        且每次落空的品种/周期都不一样（随机）。不重试的话，
+        该周期的数据会静默变成空数组，进而让价差配对失败、
+        整页图表消失（曾导致云端校验报「M0-RM0 没有任何图表数据」）。
+        这里对「空结果」做重试，仍失败才认命返回 []。
     """
-    url = MINLINE_URL.format(sym=symbol, ptype=ptype)
-    text = _curl(url)
+    for attempt in range(retries + 1):
+        url = MINLINE_URL.format(sym=symbol, ptype=ptype)
+        text = _curl(url)
+        bars = _parse_minline_text(text)
+        if bars:
+            return bars
+        if attempt < retries:
+            time.sleep(0.6 * (attempt + 1))   # 退避：0.6s、1.2s
+    return []
+
+
+def _parse_minline_text(text):
+    """把分钟线接口的 jsonp 响应解析成 bar 列表。空/异常一律返回 []。"""
     if not text:
         return []
     # 剥离 jsonp 包裹
@@ -156,9 +176,18 @@ def fetch_minline(symbol, ptype="5"):
     return out
 
 
-def fetch_quote(symbol):
-    """抓取实时行情快照，返回 dict 或 None。"""
-    text = _curl(QUOTE_URL.format(sym=symbol))
+def fetch_quote(symbol, retries=2):
+    """抓取实时行情快照，返回 dict 或 None。带重试，见 fetch_minline 的说明。"""
+    for attempt in range(retries + 1):
+        q = _parse_quote_text(_curl(QUOTE_URL.format(sym=symbol)))
+        if q:
+            return q
+        if attempt < retries:
+            time.sleep(0.6 * (attempt + 1))
+    return None
+
+
+def _parse_quote_text(text):
     if not text or "=" not in text:
         return None
     m = re.search(r'"(.*)"', text)
@@ -186,12 +215,22 @@ def fetch_quote(symbol):
         return None
 
 
-def fetch_daily(symbol):
+def fetch_daily(symbol, retries=2):
     """
     抓取日线（历史很长，约 4600 根，覆盖近 19 年）。
     周线与月线由日线聚合得到，避免额外接口（且周/月线接口不可用）。
+    带重试，见 fetch_minline 的说明。
     """
-    text = _curl(DAILY_URL.format(sym=symbol))
+    for attempt in range(retries + 1):
+        bars = _parse_daily_text(_curl(DAILY_URL.format(sym=symbol)))
+        if bars:
+            return bars
+        if attempt < retries:
+            time.sleep(0.6 * (attempt + 1))
+    return []
+
+
+def _parse_daily_text(text):
     if not text:
         return []
     m = re.search(r"var\s+_\w+_\((.*)\)\s*;?\s*$", text, re.S)
@@ -331,6 +370,9 @@ def fetch_all(symbols=None, periods=("1", "5", "15", "30"), max_workers=14,
     """
     并发抓取多品种多周期，返回嵌套 dict 并落盘。
     并发是为了让 7 品种 × 4 周期 = 28 个请求能在 10 秒内跑完。
+
+    注意 max_workers 不要调太高：新浪接口并发一高就开始随机返回空体，
+    14 线程已是实测比较稳的上限（配合 fetch_* 内部的重试）。
     """
     symbols = symbols or list(WATCH_LIST.keys())
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -389,6 +431,20 @@ def fetch_all(symbols=None, periods=("1", "5", "15", "30"), max_workers=14,
             elif kind == "quote":
                 result["symbols"][sym]["quote"] = data
 
+    # 抓取完整性自检：重试后仍为空的任务记下来。
+    # 这些空值会直接导致对应图表消失、价差配对失败，
+    # 所以必须在日志里显式暴露，而不是静默吞掉。
+    gaps = []
+    for sym in symbols:
+        e = result["symbols"][sym]
+        for pt in periods:
+            if not (e["periods"].get(pt) or []):
+                gaps.append(f"{sym} {pt}m")
+        if not (e.get("daily") or []):
+            gaps.append(f"{sym} 日线")
+        if not e.get("quote"):
+            gaps.append(f"{sym} 行情")
+
     # 补当日日K（detail 见 merge_today_daily 的 docstring）：
     # 必须在聚合周/月线之前做，否则今天这根进不了本周/本月。
     for sym in symbols:
@@ -423,6 +479,10 @@ def fetch_all(symbols=None, periods=("1", "5", "15", "30"), max_workers=14,
                     break
             print(f"[抓取] {sym} {e['name']}: {' '.join(parts)}  最新 {latest}")
         print(f"[耗时] {elapsed:.1f} 秒（并发 {max_workers} 线程）")
+        if gaps:
+            print(f"[警告] 重试后仍为空：{', '.join(gaps)}")
+        else:
+            print("[完整性] 全部品种/周期抓取齐全")
     else:
         # 静默模式下仍要修正名称
         for sym in symbols:
@@ -430,6 +490,9 @@ def fetch_all(symbols=None, periods=("1", "5", "15", "30"), max_workers=14,
             q = e.get("quote")
             if q and q.get("name"):
                 e["name"] = q["name"].replace("连续", "")
+        # 静默模式也要把缺口报到 stderr，不能悄悄放过
+        if gaps:
+            print(f"  [警告] 重试后仍为空：{', '.join(gaps)}", file=sys.stderr)
 
     out_path = os.path.join(DATA_DIR, "market_data.json")
     with open(out_path, "w", encoding="utf-8") as fp:
