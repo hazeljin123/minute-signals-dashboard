@@ -80,14 +80,42 @@ def do_refresh(verbose=True):
     return payload
 
 
+# 非交易日的刷新间隔（秒）。休市时行情不动，没必要每 10 秒抓一次 ——
+# 既省网络开销，也避免日志里刷满"已刷新但数据没变"。
+IDLE_INTERVAL = 600
+
+
+def _should_run_now():
+    """判断当前是否处于交易时段，返回 (bool, reason)。"""
+    try:
+        from trading_calendar import session_trading_check
+        from datetime import datetime as _dt
+        return session_trading_check(_dt.now())
+    except Exception as e:
+        # 判断模块出问题时不影响刷新，宁可多跑也别停摆
+        return True, f"交易日判断不可用（{e}），按交易时段处理"
+
+
 def refresh_loop(interval):
-    """后台线程：定期刷新"""
+    """后台线程：定期刷新。非交易日自动降频。"""
+    idle_logged = False
     while True:
-        try:
-            do_refresh()
-        except Exception as e:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 刷新失败: {e}")
-        time.sleep(interval)
+        ok, reason = _should_run_now()
+        if ok:
+            idle_logged = False
+            try:
+                do_refresh()
+            except Exception as e:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 刷新失败: {e}")
+            time.sleep(interval)
+        else:
+            # 非交易时段：只提示一次，然后按 IDLE_INTERVAL 慢速轮询，
+            # 这样假期结束、下一个交易日一开盘就能自动恢复实时刷新。
+            if not idle_logged:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 非交易时段"
+                      f"（{reason}），刷新降频至 {IDLE_INTERVAL // 60} 分钟一次")
+                idle_logged = True
+            time.sleep(IDLE_INTERVAL)
 
 
 def main():
