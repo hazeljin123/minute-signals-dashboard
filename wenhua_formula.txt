@@ -1,0 +1,69 @@
+{ ============================================================
+  分钟线买卖点信号 —— 文华财经麦语言指标公式
+  ------------------------------------------------------------
+  适用品种：棕榈油 P、豆粕 M、菜粕 RM、豆油 Y、
+            菜油 OI、鸡蛋 JD、生猪 LH
+  ------------------------------------------------------------
+  用法：
+    1. 文华财经 -> 技术分析 -> 指标管理器 -> 新建指标
+    2. 将本文件内容整体粘贴进去，命名为「买卖点信号」
+    3. 在 K 线图右键 -> 叠加指标 -> 选择该指标
+    4. 周期建议切到 5 分钟或 15 分钟，信号最稳定
+
+  注意：本公式逻辑与本地看板一致，但受麦语言语法限制，
+        仅实现了「单周期」指标判断，不含多周期共振。
+        看板里的共振逻辑无法用麦语言表达。
+  ============================================================ }
+
+// ---------- 参数 ----------
+N1:=5;        // 短均线
+N2:=10;       // 中均线
+N3:=20;       // 长均线
+RN:=14;       // RSI 周期
+MB:=20;       // 布林周期
+
+// ---------- 均线系统 ----------
+MA5:MA(C,N1),COLORYELLOW;
+MA10:MA(C,N2),COLORWHITE;
+MA20:MA(C,N3),COLORGRAY;
+
+// ---------- 指标计算 ----------
+// MACD
+DIFF:=EMA(C,12)-EMA(C,26);
+DEA:=EMA(DIFF,9);
+MACDBAR:=(DIFF-DEA)*2;
+
+// RSI（Wilder 简化算法，与看板口径接近）
+LC:=REF(C,1);
+RSIVAL:=SMA(MAX(C-LC,0),RN,1)/SMA(ABS(C-LC),RN,1)*100;
+
+// 布林带
+BOLLMID:=MA(C,MB);
+BOLLUP:=BOLLMID+2*STD(C,MB);
+BOLLLO:=BOLLMID-2*STD(C,MB);
+
+// ---------- 买卖点条件 ----------
+// 买点条件（从严，宁缺勿滥）
+BUYCOND:=
+    (CROSS(DIFF,DEA) AND RSIVAL<45 AND C<=BOLLMID*1.02)
+ OR (RSIVAL<25 AND C<BOLLLO);
+
+// 卖点条件
+SELLCOND:=
+    (CROSSDOWN(DIFF,DEA) AND RSIVAL>55 AND C>=BOLLMID*0.98)
+ OR (RSIVAL>75 AND C>BOLLUP);
+
+// ---------- 信号绘制 ----------
+// 买点：红色向上箭头，画在最低价下方
+DRAWTEXT(BUYCOND AND NOT REF(BUYCOND,1),L*0.998,'买'),COLORRED,VALIGN0;
+DRAWICON(BUYCOND,L,4);
+
+// 卖点：绿色向下箭头，画在最高价上方
+DRAWTEXT(SELLCOND AND NOT REF(SELLCOND,1),H*1.002,'卖'),COLORGREEN,VALIGN2;
+DRAWICON(SELLCOND,H,5);
+
+// ---------- 共振提示（同根K线多条件同时满足时加粗） ----------
+MULTIBUY:=BUYCOND AND CROSS(MA5,MA10) AND RSIVAL<45;
+MULTISELL:=SELLCOND AND CROSSDOWN(MA5,MA10) AND RSIVAL>55;
+DRAWICON(MULTIBUY,L*0.995,1);
+DRAWICON(MULTISELL,H*1.005,2);

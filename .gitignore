@@ -1,0 +1,24 @@
+# 中间数据（Actions 每次运行时会重新抓取，无需入库）
+data/
+*.tmp
+dashboard.data.json.tmp
+
+# 生成产物：由 Actions 每次运行自动生成，不必入库（体积各约 0.9MB）
+# 注意：本机跑 serve.py 时这些文件仍会正常生成，只是不纳入版本管理。
+dashboard.html
+dashboard.data.json
+index.html
+public/
+
+# 运行日志
+serve.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 系统杂项
+.DS_Store
+Thumbs.db

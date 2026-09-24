@@ -1,0 +1,116 @@
+name: 更新分钟线看板
+
+# ⚠️ 关于 cron 时区：GitHub Actions 的 cron 一律按 UTC 计算，不是北京时间。
+# 北京时间 = UTC + 8，所以下表里写的是「北京时间减 8 小时」。
+#
+# 交易日时段（北京时间）-> 对应 UTC：
+#   早盘  08:50-11:35  -> UTC 00:50-03:35
+#   午盘  13:20-15:05  -> UTC 05:20-07:05
+#   夜盘  20:50-23:05  -> UTC 12:50-15:05
+#
+# 用 */4 表示「每 4 分钟」，尽量压住免费 runner 的排队延迟。
+# GitHub 对公开仓库的定时任务不计费；若仓库是私有的，每月 2000 分钟额度，
+# 按每次约 1 分钟、每天约 130 次估算够用。嫌紧张就把 */4 改成 */10。
+on:
+  # 手动触发按钮（仓库页面 Actions 标签页 -> Run workflow）
+  workflow_dispatch:
+
+  schedule:
+    - cron: "*/4 0-3 * * 1-5"      # 早盘
+    - cron: "*/4 5-7 * * 1-5"      # 午盘
+    - cron: "*/4 12-15 * * 1-5"    # 夜盘
+
+permissions:
+  contents: read       # 只读代码，不再往仓库里写产物
+  pages: write         # 允许发布 Pages
+  id-token: write      # OIDC，Pages 官方部署方式要求
+
+# 同一时间只跑一个，避免两次部署打架；不取消正在跑的（宁可稍等）
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 准备 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 本项目零第三方依赖（全是标准库 + 系统 curl），无需 pip install。
+      - name: 环境自检
+        run: |
+          echo "Python: $(python --version)"
+          echo "curl  : $(curl --version | head -1)"
+          python -c "import json,re,subprocess,concurrent.futures,datetime; print('标准库 OK')"
+
+      # 关键一步：先探一次新浪接口。
+      # 这条路能不能走通，全看 GitHub 的机器能不能访问国内行情源；
+      # 不通就立刻失败并写明原因，不让后面抓取循环各自超时白烧时间。
+      - name: 网络连通性自检
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
+            -H "Referer: https://finance.sina.com.cn" \
+            "https://hq.sinajs.cn/list=nf_P0" || echo "000")
+          echo "新浪行情接口 HTTP = $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::新浪接口不可达（HTTP $code）—— GitHub 的机器访问不了该行情源，"
+            echo "::error::路线 1 走不通，需要改用云服务器方案。"
+            exit 1
+          fi
+
+      - name: 生成看板
+        run: python build_dashboard.py
+
+      - name: 校验产物
+        run: |
+          test -f dashboard.html      || { echo "缺少 dashboard.html"; exit 1; }
+          test -f dashboard.data.json || { echo "缺少 dashboard.data.json"; exit 1; }
+          python - <<'PY'
+          import json
+          p = json.load(open('dashboard.data.json', encoding='utf-8'))
+          pages = p.get('pages') or []
+          print(f"生成时间: {p.get('generated_at')}   数据时间: {p.get('data_at')}")
+          print(f"页面数  : {len(pages)}")
+          assert len(pages) >= 10, f"页面数异常：{len(pages)}（应为 11 = 7 品种 + 4 价差）"
+          sym = [x for x in pages if x['kind'] == 'symbol']
+          itp = [x for x in pages if x['kind'] == 'interprice']
+          print(f"  品种页: {len(sym)}   价差页: {len(itp)}")
+          empty = [x['code'] for x in pages if not (x.get('bars') or {})]
+          assert not empty, f"这些页面没有任何图表数据：{empty}"
+          print("产物校验通过")
+          PY
+
+      # 只把「网站真正需要的三个文件」挑出来发布，避免把源码、data/（6MB+）
+      # 一并传上 Pages —— 那会白白拖慢每次部署。
+      - name: 准备 Pages 产物
+        run: |
+          mkdir -p public
+          cp dashboard.html      public/index.html          # Pages 默认入口
+          cp dashboard.html      public/dashboard.html      # 保留原名，便于直接访问
+          cp dashboard.data.json public/dashboard.data.json # 前端热更新用
+          touch public/.nojekyll          # 阻止 Jekyll 处理，避免忽略下划线开头的文件
+          echo "--- public/ 内容 ---"
+          ls -la public/
+
+      - name: 上传 Pages 产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 发布到 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
