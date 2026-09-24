@@ -34,6 +34,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # 把「今天要不要跑」暴露给 deploy job，
+    # 这样非交易日时 deploy 可以跳过，不会把空产物发上去。
+    outputs:
+      should_run: ${{ steps.trading.outputs.should_run }}
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4
@@ -50,10 +54,31 @@ jobs:
           echo "curl  : $(curl --version | head -1)"
           python -c "import json,re,subprocess,concurrent.futures,datetime; print('标准库 OK')"
 
-      # 关键一步：先探一次新浪接口。
-      # 这条路能不能走通，全看 GitHub 的机器能不能访问国内行情源；
-      # 不通就立刻失败并写明原因，不让后面抓取循环各自超时白烧时间。
+      # 交易日检查：周末、法定节假日、长假前夜都直接跳过，
+      # 避免白烧额度，也避免生成一份和上次一模一样的无意义部署。
+      # 判断逻辑在 trading_calendar.py，本地计算，零网络开销。
+      - name: 交易日检查
+        id: trading
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime, timedelta, timezone
+          from trading_calendar import session_trading_check
+
+          # runner 是 UTC，这里显式换成北京时间再判断
+          now = datetime.now(timezone(timedelta(hours=8))).replace(tzinfo=None)
+          print(f"当前北京时间: {now:%Y-%m-%d %H:%M}")
+
+          ok, reason = session_trading_check(now)
+          print(f"判定: {'执行' if ok else '跳过'} —— {reason}")
+
+          # 写进 GITHUB_OUTPUT，供后续步骤用 if 判断
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"should_run={'true' if ok else 'false'}\n")
+          PY
+
       - name: 网络连通性自检
+        if: steps.trading.outputs.should_run == 'true'
         run: |
           code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
             -H "Referer: https://finance.sina.com.cn" \
@@ -66,9 +91,11 @@ jobs:
           fi
 
       - name: 生成看板
+        if: steps.trading.outputs.should_run == 'true'
         run: python build_dashboard.py
 
       - name: 校验产物
+        if: steps.trading.outputs.should_run == 'true'
         run: |
           test -f dashboard.html      || { echo "缺少 dashboard.html"; exit 1; }
           test -f dashboard.data.json || { echo "缺少 dashboard.data.json"; exit 1; }
@@ -90,6 +117,7 @@ jobs:
       # 只把「网站真正需要的三个文件」挑出来发布，避免把源码、data/（6MB+）
       # 一并传上 Pages —— 那会白白拖慢每次部署。
       - name: 准备 Pages 产物
+        if: steps.trading.outputs.should_run == 'true'
         run: |
           mkdir -p public
           cp dashboard.html      public/index.html          # Pages 默认入口
@@ -100,12 +128,22 @@ jobs:
           ls -la public/
 
       - name: 上传 Pages 产物
+        if: steps.trading.outputs.should_run == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: public
 
+      # 非交易日时的说明（让日志里能一眼看出是主动跳过，不是失败）
+      - name: 跳过说明
+        if: steps.trading.outputs.should_run != 'true'
+        run: |
+          echo "::notice::今天不是交易日（或处于长假前夜无夜盘），已跳过本次更新。"
+          echo "线上看板保持上一次交易日的结果不变。"
+
   deploy:
     needs: build
+    # build 被跳过（非交易日）时不部署，避免把空产物发上去
+    if: needs.build.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
